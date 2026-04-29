@@ -322,14 +322,11 @@ const searchEngine = {
                 cards.forEach(card => {
                     const titleEl = card.querySelector('.card-title');
                     if (titleEl && titleEl.textContent.includes(target.title)) {
-                        const smoothBehavior = window.matchMedia('(max-width: 768px)').matches ? 'auto' : 'smooth';
-                        card.scrollIntoView({ behavior: smoothBehavior, block: 'center' });
-                        card.style.outline = '2px solid var(--why-cyan)';
-                        card.style.outlineOffset = '2px';
+                        card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                        card.style.boxShadow = '0 0 30px rgba(0, 242, 255, 0.4)';
                         card.style.borderColor = 'var(--why-cyan)';
                         setTimeout(() => {
-                            card.style.outline = '';
-                            card.style.outlineOffset = '';
+                            card.style.boxShadow = '';
                             card.style.borderColor = '';
                         }, 3000);
                     }

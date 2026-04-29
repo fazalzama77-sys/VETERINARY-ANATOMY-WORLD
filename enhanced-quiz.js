@@ -19,14 +19,11 @@ const quizApp = {
   startTime: null,
   endTime: null,
   timerInterval: null,
-  reviewScrollHandler: null,
-  reviewScrollTicking: false,
-  reviewBackToTopVisible: false,
   quizState: 'menu', // menu, active, paused, completed, reviewing
 
   // Configuration
-  regions: ["Forelimb", "Hindlimb", "Head & Neck", "Thorax", "Abdomen", "Pelvis"],
-  systems: ["Osteology", "Myology", "Arthrology", "Neurology", "Angiology"],
+  regions: ["Forelimb", "Hindlimb & Pelvis", "Head & Neck", "Thorax", "Abdomen"],
+  systems: ["Osteology", "Myology", "Arthrology", "Neurology", "Angiology", "Splanchnology"],
 
   // ==================== INITIALIZATION ====================
 
@@ -38,8 +35,6 @@ const quizApp = {
   },
 
   close: () => {
-    quizApp.detachReviewScrollHandler();
-
     // Remove floating elements
     const backToTop = document.getElementById('review-back-to-top');
     if (backToTop) backToTop.remove();
@@ -60,7 +55,6 @@ const quizApp = {
 
   cleanup: () => {
     quizApp.stopTimer();
-    quizApp.detachReviewScrollHandler();
     quizApp.resetSelections();
   },
 
@@ -77,7 +71,6 @@ const quizApp = {
     quizApp.flagged.clear();
     quizApp.startTime = null;
     quizApp.endTime = null;
-    quizApp.reviewBackToTopVisible = false;
     quizApp.quizState = 'menu';
   },
 
@@ -286,12 +279,13 @@ const quizApp = {
         else if (mode === 'tf' && section.tf) questions = [...section.tf];
         else if (mode === 'fib' && section.fib) questions = [...section.fib];
 
-        // Add metadata to each question
-        questions = questions.map(q => ({
+        // Add metadata to each question (incl. original index for SRS tracking)
+        questions = questions.map((q, idx) => ({
           ...q,
           _region: region,
           _system: system,
-          _mode: mode
+          _mode: mode,
+          _index: idx
         }));
 
         pool.push(...questions);
@@ -388,7 +382,10 @@ const quizApp = {
 
     // Only shuffle if not answered before
     if (userAnswer === null) {
-      opts.sort(() => Math.random() - 0.5);
+      for (let i = opts.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [opts[i], opts[j]] = [opts[j], opts[i]];
+      }
     }
 
     opts.forEach(opt => {
@@ -499,6 +496,11 @@ const quizApp = {
 
     quizApp.updateNavigationControls();
     quizApp.renderQuestionGrid();
+
+    // ---- SRS hook ----
+    if (typeof srs !== 'undefined' && qData._region) {
+      srs.recordAnswer(srs.qid(qData._region, qData._system, qData._mode, qData._index), isCorrect);
+    }
   },
 
   checkTF: (userBool, btn, qData) => {
@@ -532,6 +534,11 @@ const quizApp = {
 
     quizApp.updateNavigationControls();
     quizApp.renderQuestionGrid();
+
+    // ---- SRS hook ----
+    if (typeof srs !== 'undefined' && qData._region) {
+      srs.recordAnswer(srs.qid(qData._region, qData._system, qData._mode, qData._index), isCorrect);
+    }
   },
 
   checkFIB: (userText, input, qData) => {
@@ -562,6 +569,11 @@ const quizApp = {
 
     quizApp.updateNavigationControls();
     quizApp.renderQuestionGrid();
+
+    // ---- SRS hook ----
+    if (typeof srs !== 'undefined' && qData._region) {
+      srs.recordAnswer(srs.qid(qData._region, qData._system, qData._mode, qData._index), isMatch);
+    }
   },
 
   showFeedback: (isCorrect, text) => {
@@ -596,21 +608,27 @@ const quizApp = {
     const prevBtn = document.getElementById('prev-q-btn');
     const nextBtn = document.getElementById('next-q-btn');
     const submitBtn = document.getElementById('submit-quiz-btn');
+    const currentAnswer = quizApp.userAnswers[quizApp.currentIndex];
 
-    if (!prevBtn || !nextBtn || !submitBtn) return;
+    // Previous button
+    prevBtn.style.display = quizApp.currentIndex > 0 ? 'flex' : 'none';
+    prevBtn.disabled = false;
 
-    // Always show Previous/Next navigation during attempts.
-    prevBtn.style.display = 'flex';
-    prevBtn.disabled = quizApp.currentIndex === 0;
-
-    // Show submit only on the last question.
+    // Next/Submit buttons
     const isLastQuestion = quizApp.currentIndex === quizApp.questions.length - 1;
-    if (isLastQuestion) {
-      nextBtn.style.display = 'none';
-      submitBtn.style.display = 'flex';
+
+    if (currentAnswer !== null) {
+      // Answered - show Next or Submit
+      if (isLastQuestion) {
+        nextBtn.style.display = 'none';
+        submitBtn.style.display = 'flex';
+      } else {
+        nextBtn.style.display = 'flex';
+        submitBtn.style.display = 'none';
+      }
     } else {
-      nextBtn.style.display = 'flex';
-      nextBtn.disabled = false;
+      // Not answered - hide both Next and Submit
+      nextBtn.style.display = 'none';
       submitBtn.style.display = 'none';
     }
   },
@@ -686,8 +704,10 @@ const quizApp = {
   toggleBookmark: () => {
     if (quizApp.bookmarks.has(quizApp.currentIndex)) {
       quizApp.bookmarks.delete(quizApp.currentIndex);
+      showToast('Bookmark removed', 'info', 'fa-bookmark');
     } else {
       quizApp.bookmarks.add(quizApp.currentIndex);
+      showToast('Bookmarked!', 'success', 'fa-bookmark');
     }
     quizApp.updateActionButtons();
     quizApp.renderQuestionGrid();
@@ -696,8 +716,10 @@ const quizApp = {
   toggleFlag: () => {
     if (quizApp.flagged.has(quizApp.currentIndex)) {
       quizApp.flagged.delete(quizApp.currentIndex);
+      showToast('Flag removed', 'info', 'fa-flag');
     } else {
       quizApp.flagged.add(quizApp.currentIndex);
+      showToast('Flagged for review', 'warning', 'fa-flag');
     }
     quizApp.updateActionButtons();
     quizApp.renderQuestionGrid();
@@ -709,14 +731,14 @@ const quizApp = {
 
     if (bookmarkBtn) {
       const isBookmarked = quizApp.bookmarks.has(quizApp.currentIndex);
-      bookmarkBtn.innerHTML = `<i class="fas ${isBookmarked ? 'fa-bookmark' : 'fa-bookmark-o'}"></i>`;
+      bookmarkBtn.innerHTML = `<i class="${isBookmarked ? 'fas fa-bookmark' : 'far fa-bookmark'}"></i>`;
       bookmarkBtn.classList.toggle('active', isBookmarked);
       bookmarkBtn.title = isBookmarked ? 'Remove Bookmark' : 'Bookmark Question';
     }
 
     if (flagBtn) {
       const isFlagged = quizApp.flagged.has(quizApp.currentIndex);
-      flagBtn.innerHTML = `<i class="fas ${isFlagged ? 'fa-flag' : 'fa-flag-o'}"></i>`;
+      flagBtn.innerHTML = `<i class="${isFlagged ? 'fas fa-flag' : 'far fa-flag'}"></i>`;
       flagBtn.classList.toggle('active', isFlagged);
       flagBtn.title = isFlagged ? 'Remove Flag' : 'Flag for Review';
     }
@@ -726,7 +748,6 @@ const quizApp = {
 
   showAnalysis: () => {
     quizApp.stopTimer();
-    quizApp.detachReviewScrollHandler();
     quizApp.endTime = Date.now();
     quizApp.quizState = 'completed';
 
@@ -735,7 +756,7 @@ const quizApp = {
 
     quizApp.hideAllViews();
     document.querySelector('.quiz-modal').classList.remove('review-mode');
-    document.getElementById('quiz-analysis-view').style.display = 'flex';
+    document.getElementById('quiz-analysis-view').style.display = 'block';
 
     // Remove floating elements from review
     const backToTop = document.getElementById('review-back-to-top');
@@ -912,11 +933,7 @@ const quizApp = {
     }
 
     // Build question jump navigator
-    const useCompactReviewNav = window.matchMedia('(max-width: 768px)').matches;
-    const jumpScrollBehavior = window.matchMedia('(max-width: 768px), (prefers-reduced-motion: reduce)').matches
-      ? 'auto'
-      : 'smooth';
-    const jumpNavHtml = useCompactReviewNav ? '' : `
+    const jumpNavHtml = `
       <div class="review-jump-nav">
         <span class="review-jump-nav-label"><i class="fas fa-compass"></i> Jump to Q:</span>
         ${filteredIndices.map((idx) => {
@@ -924,7 +941,7 @@ const quizApp = {
       let dotClass = 'unanswered-dot';
       if (ans?.isCorrect === true) dotClass = 'correct-dot';
       else if (ans?.isCorrect === false) dotClass = 'incorrect-dot';
-      return `<button class="review-jump-btn ${dotClass}" onclick="document.getElementById('review-card-${idx}').scrollIntoView({behavior:'${jumpScrollBehavior}', block:'center'})" title="Question ${idx + 1}">${idx + 1}</button>`;
+      return `<button class="review-jump-btn ${dotClass}" onclick="document.getElementById('review-card-${idx}').scrollIntoView({behavior:'smooth', block:'center'})" title="Question ${idx + 1}">${idx + 1}</button>`;
     }).join('')}
       </div>
     `;
@@ -1145,46 +1162,20 @@ const quizApp = {
 
     // Show/hide back-to-top on scroll
     const modal = document.querySelector('.quiz-modal');
-    quizApp.attachReviewScrollHandler(modal, backToTop);
+    if (quizApp._scrollHandler) modal.removeEventListener('scroll', quizApp._scrollHandler);
+    quizApp._scrollHandler = () => {
+      if (modal.scrollTop > 400) {
+        backToTop.classList.add('visible');
+      } else {
+        backToTop.classList.remove('visible');
+      }
+    };
+    modal.addEventListener('scroll', quizApp._scrollHandler);
   },
 
   filterReview: () => {
     const filter = document.getElementById('review-filter').value;
     quizApp.renderReviewList(filter);
-  },
-
-  attachReviewScrollHandler: (modal, backToTop) => {
-    if (!modal || !backToTop) return;
-
-    quizApp.detachReviewScrollHandler(modal);
-
-    quizApp.reviewScrollTicking = false;
-    quizApp.reviewScrollHandler = () => {
-      if (quizApp.reviewScrollTicking) return;
-      quizApp.reviewScrollTicking = true;
-
-      requestAnimationFrame(() => {
-        const shouldShow = modal.scrollTop > 400;
-        if (shouldShow !== quizApp.reviewBackToTopVisible) {
-          backToTop.classList.toggle('visible', shouldShow);
-          quizApp.reviewBackToTopVisible = shouldShow;
-        }
-        quizApp.reviewScrollTicking = false;
-      });
-    };
-
-    modal.addEventListener('scroll', quizApp.reviewScrollHandler, { passive: true });
-    quizApp.reviewScrollHandler();
-  },
-
-  detachReviewScrollHandler: (modalEl = null) => {
-    const modal = modalEl || document.querySelector('.quiz-modal');
-    if (modal && quizApp.reviewScrollHandler) {
-      modal.removeEventListener('scroll', quizApp.reviewScrollHandler);
-    }
-    quizApp.reviewScrollHandler = null;
-    quizApp.reviewScrollTicking = false;
-    quizApp.reviewBackToTopVisible = false;
   },
 
   // ==================== SAVE/RESUME PROGRESS ====================
@@ -1207,7 +1198,11 @@ const quizApp = {
       elapsedTime: quizApp.getElapsedTime()
     };
 
-    localStorage.setItem('ivri-quiz-progress', JSON.stringify(progress));
+    try {
+      localStorage.setItem('ivri-quiz-progress', JSON.stringify(progress));
+    } catch(e) {
+      console.warn('Progress save failed (storage full):', e);
+    }
   },
 
   loadSavedProgress: () => {
@@ -1239,6 +1234,7 @@ const quizApp = {
       quizApp.startTimer();
       quizApp.renderQuestion();
       quizApp.updateNavigationControls();
+      showToast('Quiz resumed!', 'success', 'fa-play-circle');
 
     } catch (e) {
       console.error('Failed to resume quiz:', e);
@@ -1301,11 +1297,10 @@ const quizApp = {
   getRegionIcon: (region) => {
     const icons = {
       "Forelimb": "fa-hand-point-up",
-      "Hindlimb": "fa-shoe-prints",
+      "Hindlimb & Pelvis": "fa-shoe-prints",
       "Thorax": "fa-lungs",
       "Abdomen": "fa-prescription-bottle-alt",
-      "Head & Neck": "fa-head-side-virus",
-      "Pelvis": "fa-bone"
+      "Head & Neck": "fa-head-side-virus"
     };
     return icons[region] || "fa-book-medical";
   },
@@ -1328,22 +1323,17 @@ const quizApp = {
 document.addEventListener('keydown', (e) => {
   if (document.getElementById('quiz-overlay').style.display !== 'flex') return;
   if (quizApp.quizState !== 'active') return;
-
-  const tag = e.target?.tagName?.toLowerCase();
-  const isTypingField = tag === 'input' || tag === 'textarea' || e.target?.isContentEditable;
-  if (isTypingField && (e.key === 'Enter' || e.key === 'ArrowLeft' || e.key === 'ArrowRight')) return;
+  const tag = document.activeElement && document.activeElement.tagName;
+  if (tag === 'INPUT' || tag === 'TEXTAREA') return;
 
   switch (e.key) {
     case 'ArrowLeft':
       if (quizApp.currentIndex > 0) quizApp.prev();
       break;
     case 'ArrowRight':
-      if (quizApp.currentIndex < quizApp.questions.length - 1) {
-        quizApp.next();
-      }
-      break;
     case 'Enter':
-      if (quizApp.currentIndex < quizApp.questions.length - 1) {
+      const currentAnswer = quizApp.userAnswers[quizApp.currentIndex];
+      if (currentAnswer !== null && quizApp.currentIndex < quizApp.questions.length - 1) {
         quizApp.next();
       }
       break;

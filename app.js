@@ -3,19 +3,6 @@
 // Phase 2: Elite Mode + Regional Anatomy Expansion
 // =========================================================
 
-(function () {
-const atlasData = window.atlasData || {};
-window.atlasData = atlasData;
-
-const ATLAS_REGIONS = ["Forelimb", "Hindlimb", "Head & Neck", "Thorax", "Abdomen", "Pelvis"];
-const ATLAS_JSON_SOURCES = {
-    Forelimb: "forelimb.json"
-};
-const ATLAS_LEGACY_SCRIPT_SOURCES = {
-    Forelimb: "data-forelimb.JS"
-};
-const loadedLegacyAtlasScripts = new Set();
-
 const app = {
     state: {
         view: 'landing',
@@ -36,6 +23,80 @@ const app = {
         if (savedElite === 'true') {
             app.state.eliteMode = true;
         }
+
+        // ---- Service worker registration (offline / PWA) ----
+        if ('serviceWorker' in navigator && location.protocol !== 'file:') {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('./service-worker.js')
+                    .catch((err) => console.warn('SW registration failed:', err.message));
+            });
+        }
+
+        // ---- Hash routing ----
+        window.addEventListener('hashchange', () => app.routeFromHash());
+        // Defer first route until DOM ready (data files loaded via script tags)
+        setTimeout(() => app.routeFromHash(), 0);
+    },
+
+    // ============== HASH ROUTING ==============
+    // Hash format examples:
+    //   #/landing
+    //   #/atlas
+    //   #/atlas/Forelimb
+    //   #/atlas/Forelimb/Osteology
+    //   #/atlas/Forelimb/Osteology/2          (open detail at index 2)
+    //   #/why  | #/dashboard | #/bookmarks
+    routeFromHash: () => {
+        const raw = (location.hash || '').replace(/^#\/?/, '');
+        if (!raw) return; // no hash → leave landing as-is
+        const parts = raw.split('/').map(decodeURIComponent);
+        const view = parts[0];
+
+        if (view === 'why' || view === 'dashboard' || view === 'landing') {
+            if (app.state.view !== view) app._loadViewInternal(view);
+            return;
+        }
+        if (view === 'bookmarks') {
+            app._loadViewInternal('atlas');
+            app.showBookmarks();
+            return;
+        }
+        if (view === 'atlas') {
+            app._loadViewInternal('atlas');
+            const region = parts[1] || null;
+            const system = parts[2] || null;
+            const idx = parts[3] != null ? parseInt(parts[3], 10) : null;
+            app.state.region = (region && atlasData && atlasData[region]) ? region : null;
+            app.state.system = (system && app.state.region && atlasData[app.state.region][system]) ? system : null;
+
+            if (app.state.region && app.state.system) {
+                document.getElementById('atlas-selector').style.display = 'none';
+                document.getElementById('atlas-content').style.display = 'grid';
+                document.getElementById('atlas-crumb').innerHTML =
+                    `ATLAS > ${app.state.region.toUpperCase()} > ${app.state.system.toUpperCase()}`;
+                app.renderTopicList();
+
+                const eliteBtn = document.getElementById('elite-toggle');
+                if (eliteBtn) eliteBtn.style.display = 'flex';
+
+                if (Number.isInteger(idx) && idx >= 0) {
+                    setTimeout(() => {
+                        const btn = document.querySelector(`.topic-btn[data-index="${idx}"]`);
+                        if (btn) app.renderDetail(idx, btn);
+                    }, 30);
+                }
+            } else {
+                app.renderAtlasSelector();
+            }
+            return;
+        }
+    },
+
+    setHash: (hash) => {
+        // Update without triggering hashchange loop
+        if (location.hash !== hash) {
+            history.pushState(null, '', hash);
+        }
     },
 
     toggleTheme: () => {
@@ -47,6 +108,7 @@ const app = {
         if (btnText) {
             btnText.innerText = isPro ? 'Student Mode' : 'Professional Mode';
         }
+        showToast(isPro ? 'Professional mode on' : 'Student mode on', 'info', 'fa-palette');
     },
 
     toggleElite: () => {
@@ -59,22 +121,28 @@ const app = {
         if (app.state.eliteMode) {
             if (eliteBtn) eliteBtn.classList.add('active');
             if (eliteText) eliteText.innerText = 'Standard View';
+            showToast('Elite mode activated', 'info', 'fa-star');
         } else {
             if (eliteBtn) eliteBtn.classList.remove('active');
             if (eliteText) eliteText.innerText = 'Elite View';
+            showToast('Elite mode off', 'info', 'fa-star');
         }
 
         const activeBtn = document.querySelector('.topic-btn.active');
         if (activeBtn) {
-            const match = activeBtn.getAttribute('onclick').match(/renderDetail\((\d+)/);
-            if (match) {
-                const index = parseInt(match[1]);
-                app.renderDetail(index, activeBtn);
-            }
+            const index = parseInt(activeBtn.dataset.index);
+            if (!isNaN(index)) app.renderDetail(index, activeBtn);
         }
     },
 
     loadView: (viewName) => {
+        app._loadViewInternal(viewName);
+        // Reflect in URL so refresh / Back work
+        app.setHash('#/' + viewName);
+    },
+
+    // Internal: switches the visible section without touching the hash.
+    _loadViewInternal: (viewName) => {
         document.querySelectorAll('.view-section').forEach(el => {
             el.classList.remove('active');
             setTimeout(() => {
@@ -83,14 +151,23 @@ const app = {
         });
 
         const target = document.getElementById(viewName + '-view');
+        if (!target) return;
         target.style.display = 'block';
         setTimeout(() => target.classList.add('active'), 10);
 
         app.state.view = viewName;
         window.scrollTo(0, 0);
 
-        if (viewName === 'atlas') app.renderAtlasSelector();
+        if (viewName === 'atlas') {
+            // Reset to selector unless hash is restoring deeper state
+            app.state.region = null;
+            app.state.system = null;
+            app.renderAtlasSelector();
+        }
         if (viewName === 'dashboard' && typeof dashboard !== 'undefined') dashboard.render();
+        if (viewName === 'why' && typeof renderCards === 'function' && typeof anatomyData !== 'undefined') {
+            renderCards(anatomyData);
+        }
     },
 
     // REGIONAL ANATOMY NAVIGATION
@@ -121,8 +198,7 @@ const app = {
         // LEVEL 1: Region Selection (Forelimb, Hindlimb, etc.)
         if (!app.state.region) {
             breadcrumb.innerHTML = "ATLAS > SELECT REGION";
-            const regions = ATLAS_REGIONS.filter(region => region in atlasData || region in ATLAS_JSON_SOURCES);
-            grid.innerHTML = regions.map(region => {
+            grid.innerHTML = Object.keys(atlasData).map(region => {
                 const icon = app.getRegionIcon(region);
                 return `
                 <div class="portal-card card-atlas" style="width: 280px; height: 300px;" onclick="app.selectRegion('${region}')">
@@ -135,13 +211,7 @@ const app = {
         // LEVEL 2: System Selection (Osteology, Myology, etc.)
         else if (!app.state.system) {
             breadcrumb.innerHTML = `ATLAS > ${app.state.region.toUpperCase()} > SELECT SYSTEM`;
-            const systems = atlasData[app.state.region] || {};
-            const systemNames = Object.keys(systems);
-            if (systemNames.length === 0) {
-                grid.innerHTML = '<div style="grid-column:1/-1; padding:30px; color:var(--text-mute); text-align:center;">No systems available for this region yet.</div>';
-                return;
-            }
-
+            const systems = atlasData[app.state.region];
             grid.innerHTML = Object.keys(systems).map(sys => {
                 const sysIcon = app.getSystemIcon(sys);
                 const count = systems[sys].length;
@@ -158,11 +228,10 @@ const app = {
     getRegionIcon: (region) => {
         const icons = {
             "Forelimb": "fa-hand-point-up",
-            "Hindlimb": "fa-shoe-prints",
+            "Hindlimb & Pelvis": "fa-shoe-prints",
             "Thorax": "fa-lungs",
             "Abdomen": "fa-prescription-bottle-alt",
-            "Head & Neck": "fa-head-side-virus",
-            "Pelvis": "fa-bone"
+            "Head & Neck": "fa-head-side-virus"
         };
         return icons[region] || "fa-bone";
     },
@@ -173,100 +242,21 @@ const app = {
             "Myology": "fa-running",
             "Arthrology": "fa-link",
             "Neurology": "fa-brain",
-            "Angiology": "fa-heartbeat"
+            "Angiology": "fa-heartbeat",
+            "Splanchnology": "fa-lungs"
         };
         return icons[system] || "fa-book-medical";
     },
 
-    loadLegacyRegionScript: (region) => {
-        if (atlasData[region]) return Promise.resolve(atlasData[region]);
-
-        const source = ATLAS_LEGACY_SCRIPT_SOURCES[region];
-        if (!source || loadedLegacyAtlasScripts.has(region)) return Promise.resolve(null);
-
-        return new Promise((resolve, reject) => {
-            const script = document.createElement('script');
-            script.src = source;
-            script.async = true;
-            script.onload = () => {
-                loadedLegacyAtlasScripts.add(region);
-                resolve(atlasData[region] || null);
-            };
-            script.onerror = () => reject(new Error(`Unable to load fallback script ${source}`));
-            document.head.appendChild(script);
-        });
-    },
-
-    loadRegionData: async (region) => {
-        if (atlasData[region]) return atlasData[region];
-
-        const source = ATLAS_JSON_SOURCES[region];
-        if (!source) return null;
-
-        const grid = document.getElementById('atlas-selector');
-        if (grid) {
-            grid.innerHTML = `
-                <div style="grid-column:1/-1; padding:40px; color:var(--text-mute); text-align:center;">
-                    <i class="fas fa-spinner fa-spin" style="color:var(--atlas-gold); font-size:2rem; margin-bottom:15px;"></i>
-                    <div>Loading ${region} anatomy...</div>
-                </div>
-            `;
-        }
-
-        try {
-            const response = await fetch(source, { cache: 'force-cache' });
-            if (!response.ok) {
-                throw new Error(`HTTP ${response.status} while loading ${source}`);
-            }
-
-            const payload = await response.json();
-            if (!payload || typeof payload !== 'object' || !payload[region]) {
-                throw new Error(`${source} does not contain a "${region}" data object.`);
-            }
-
-            atlasData[region] = payload[region];
-
-            if (typeof searchEngine !== 'undefined' && typeof searchEngine.buildIndex === 'function') {
-                searchEngine.buildIndex();
-            }
-
-            return atlasData[region];
-        } catch (error) {
-            console.error(`Unable to load ${region} data:`, error);
-            const fallbackData = await app.loadLegacyRegionScript(region).catch(fallbackError => {
-                console.error(`Unable to load ${region} fallback script:`, fallbackError);
-                return null;
-            });
-
-            if (fallbackData) {
-                if (typeof searchEngine !== 'undefined' && typeof searchEngine.buildIndex === 'function') {
-                    searchEngine.buildIndex();
-                }
-                return fallbackData;
-            }
-
-            if (grid) {
-                grid.innerHTML = `
-                    <div style="grid-column:1/-1; padding:30px; border:1px solid var(--border); color:var(--text-main); text-align:center;">
-                        <strong style="color:#ff6b6b;">Unable to load ${region} data.</strong>
-                        <div style="margin-top:10px; color:var(--text-mute);">Check that ${source} exists and is valid JSON.</div>
-                    </div>
-                `;
-            }
-            return null;
-        }
-    },
-
-    selectRegion: async (region) => {
+    selectRegion: (region) => {
         app.state.region = region;
-        app.state.system = null;
-        const regionData = await app.loadRegionData(region);
-        if (!regionData) return;
+        app.setHash(`#/atlas/${encodeURIComponent(region)}`);
         app.renderAtlasSelector();
     },
 
     selectSystem: (system) => {
         app.state.system = system;
+        app.setHash(`#/atlas/${encodeURIComponent(app.state.region)}/${encodeURIComponent(system)}`);
         document.getElementById('atlas-selector').style.display = 'none';
         document.getElementById('atlas-content').style.display = 'grid';
         document.getElementById('atlas-crumb').innerHTML = `ATLAS > ${app.state.region.toUpperCase()} > ${system.toUpperCase()}`;
@@ -289,9 +279,11 @@ const app = {
     atlasBack: () => {
         if (document.getElementById('atlas-content').style.display === 'grid') {
             app.state.system = null;
+            app.setHash(app.state.region ? `#/atlas/${encodeURIComponent(app.state.region)}` : '#/atlas');
             app.renderAtlasSelector();
         } else if (app.state.region) {
             app.state.region = null;
+            app.setHash('#/atlas');
             app.renderAtlasSelector();
         } else {
             app.loadView('landing');
@@ -301,15 +293,19 @@ const app = {
     renderTopicList: () => {
         const list = document.getElementById('topic-list');
         // Safety check
-        if (!app.state.region || !app.state.system || !atlasData[app.state.region]?.[app.state.system]) {
+        if (!app.state.region || !app.state.system || !atlasData[app.state.region][app.state.system]) {
             list.innerHTML = '<div style="padding:20px; color:var(--text-mute);">No data available for this section.</div>';
             return;
         }
 
         const data = atlasData[app.state.region][app.state.system];
-        list.innerHTML = data.map((item, index) => `
-            <button class="topic-btn" onclick="app.renderDetail(${index}, this)">${item.title.toUpperCase()}</button>
-        `).join('');
+        list.innerHTML = data.map((item, index) => {
+            const id = app.bookmarkId(app.state.region, app.state.system, index);
+            const star = app.isBookmarked(id) ? '<i class="fas fa-star bm-star" title="Bookmarked"></i> ' : '';
+            return `
+                <button class="topic-btn" data-index="${index}" onclick="app.renderDetail(${index}, this)">${star}${item.title.toUpperCase()}</button>
+            `;
+        }).join('');
     },
 
     renderDetail: (index, btnElement) => {
@@ -331,17 +327,30 @@ const app = {
         const item = data[index];
         const panel = document.getElementById('detail-panel');
 
+        // Update URL so refresh / Back works on this exact topic
+        app.setHash(`#/atlas/${encodeURIComponent(app.state.region)}/${encodeURIComponent(app.state.system)}/${index}`);
+
         // ELITE MODE LOGIC: Use eliteDesc if available and eliteMode is ON
         const useElite = app.state.eliteMode && item.eliteDesc;
         const displayContent = useElite ? item.eliteDesc : item.desc;
         const modeLabel = useElite ? 'COMPREHENSIVE ACADEMIC VIEW' : 'STANDARD MORPHOLOGY';
         const modeBadge = useElite ? '<span style="background:var(--why-cyan); color:var(--void); padding:2px 8px; border-radius:4px; font-size:0.8rem; margin-left:10px;">ELITE MODE</span>' : '';
 
+        // Bookmark button
+        const bmId = app.bookmarkId(app.state.region, app.state.system, index);
+        const bookmarked = app.isBookmarked(bmId);
+        const bmBtn = `<button class="bm-btn ${bookmarked ? 'active' : ''}" onclick="app.toggleBookmark(${index}, this)" title="${bookmarked ? 'Remove bookmark' : 'Bookmark this topic'}" aria-label="Toggle bookmark"><i class="fas fa-star"></i> <span>${bookmarked ? 'Bookmarked' : 'Bookmark'}</span></button>`;
+
         // Build content based on available data
         let contentHtml = `
-            <div class="h-title">${item.title} ${modeBadge}</div>
-            <span class="h-sub">/// ${modeLabel} // ${app.state.system.toUpperCase()}</span>
-            
+            <div class="detail-header">
+                <div>
+                    <div class="h-title">${item.title} ${modeBadge}</div>
+                    <span class="h-sub">/// ${modeLabel} // ${app.state.system.toUpperCase()}</span>
+                </div>
+                ${bmBtn}
+            </div>
+
             <div class="feature-box" style="animation: detailFade 0.5s ease; background:rgba(255,255,255,0.03); padding:20px; border-radius:8px; margin-bottom:20px;">
                 <strong style="color:var(--atlas-gold); display:block; margin-bottom:10px; font-family:var(--font-code);">
                     ${useElite ? '📚 DETAILED DESCRIPTION:' : '📝 STANDARD DESCRIPTION:'}
@@ -405,10 +414,103 @@ const app = {
         }
 
         panel.innerHTML = contentHtml;
+
+        // Decorate text with glossary tooltips (after innerHTML is set)
+        if (typeof glossary !== 'undefined') {
+            try { glossary.decorate(panel); } catch (e) { console.warn('Glossary decorate failed:', e.message); }
+        }
+    },
+
+    // ============== BOOKMARKS ==============
+    BOOKMARK_KEY: 'ivri-bookmarks',
+
+    bookmarkId: (region, system, index) => `${region}::${system}::${index}`,
+
+    _loadBookmarks: () => {
+        try { return JSON.parse(localStorage.getItem(app.BOOKMARK_KEY)) || []; }
+        catch { return []; }
+    },
+
+    _saveBookmarks: (arr) => localStorage.setItem(app.BOOKMARK_KEY, JSON.stringify(arr)),
+
+    isBookmarked: (id) => app._loadBookmarks().includes(id),
+
+    toggleBookmark: (index, btn) => {
+        if (!app.state.region || !app.state.system) return;
+        const id = app.bookmarkId(app.state.region, app.state.system, index);
+        const list = app._loadBookmarks();
+        const i = list.indexOf(id);
+        if (i === -1) {
+            list.push(id);
+            if (typeof showToast === 'function') showToast('Bookmarked', 'success', 'fa-star');
+        } else {
+            list.splice(i, 1);
+            if (typeof showToast === 'function') showToast('Bookmark removed', 'info', 'fa-star');
+        }
+        app._saveBookmarks(list);
+        // Update UI immediately
+        if (btn) {
+            btn.classList.toggle('active');
+            const span = btn.querySelector('span');
+            if (span) span.innerText = btn.classList.contains('active') ? 'Bookmarked' : 'Bookmark';
+        }
+        // Refresh sidebar stars
+        app.renderTopicList();
+        // Re-mark the active topic
+        const act = document.querySelector(`.topic-btn[data-index="${index}"]`);
+        if (act) act.classList.add('active');
+    },
+
+    // Show all bookmarked topics in the Atlas content area
+    showBookmarks: () => {
+        const ids = app._loadBookmarks();
+        document.getElementById('atlas-selector').style.display = 'none';
+        document.getElementById('atlas-content').style.display = 'grid';
+        document.getElementById('atlas-crumb').innerHTML = `ATLAS > MY BOOKMARKS (${ids.length})`;
+
+        const list = document.getElementById('topic-list');
+        const panel = document.getElementById('detail-panel');
+
+        if (ids.length === 0) {
+            list.innerHTML = '<div style="padding:20px; color:var(--text-mute);">No bookmarks yet. Click the star icon on any topic to save it here.</div>';
+            panel.innerHTML = `<div style="height:100%;display:flex;flex-direction:column;justify-content:center;align-items:center;opacity:0.4;color:var(--text-mute);">
+                <i class="fas fa-star" style="font-size:3rem;margin-bottom:20px;"></i>
+                <div>YOUR BOOKMARK LIST IS EMPTY</div>
+              </div>`;
+            return;
+        }
+
+        list.innerHTML = ids.map((id) => {
+            const [region, system, idxStr] = id.split('::');
+            const idx = parseInt(idxStr, 10);
+            const item = atlasData?.[region]?.[system]?.[idx];
+            if (!item) return '';
+            return `<button class="topic-btn" onclick="app.openBookmark('${region}','${system}',${idx})">
+                        <i class="fas fa-star bm-star"></i> ${item.title.toUpperCase()}
+                        <span class="bm-meta">${region} / ${system}</span>
+                    </button>`;
+        }).join('');
+
+        panel.innerHTML = `<div style="height:100%;display:flex;flex-direction:column;justify-content:center;align-items:center;opacity:0.5;color:var(--text-mute);">
+            <i class="fas fa-bookmark" style="font-size:3rem;margin-bottom:20px;color:var(--atlas-gold);"></i>
+            <div>SELECT A BOOKMARKED TOPIC FROM THE LIST</div>
+          </div>`;
+    },
+
+    openBookmark: (region, system, idx) => {
+        app.state.region = region;
+        app.state.system = system;
+        app.setHash(`#/atlas/${encodeURIComponent(region)}/${encodeURIComponent(system)}/${idx}`);
+        document.getElementById('atlas-crumb').innerHTML = `ATLAS > ${region.toUpperCase()} > ${system.toUpperCase()}`;
+        app.renderTopicList();
+        const eliteBtn = document.getElementById('elite-toggle');
+        if (eliteBtn) eliteBtn.style.display = 'flex';
+        setTimeout(() => {
+            const btn = document.querySelector(`.topic-btn[data-index="${idx}"]`);
+            if (btn) app.renderDetail(idx, btn);
+        }, 30);
     }
 };
-
-window.app = app;
 
 // =========================================================
 // 2. ATLAS QUIZ ENGINE - Enhanced (See enhanced-quiz.js)
@@ -611,14 +713,6 @@ function checkAnswer(selectedIndex, btnElement) {
     nextQuizBtn.style.display = 'block';
 }
 
-Object.assign(window, {
-    startQuiz,
-    closeModal,
-    explainLikeEngineer,
-    generateQuiz,
-    closeQuiz
-});
-
 document.addEventListener('DOMContentLoaded', () => {
     app.init();
 });
@@ -626,4 +720,3 @@ document.addEventListener('DOMContentLoaded', () => {
 if (grid && anatomyData) {
     renderCards(anatomyData);
 }
-})();

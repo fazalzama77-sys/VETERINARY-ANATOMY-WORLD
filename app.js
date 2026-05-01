@@ -24,11 +24,45 @@ const app = {
             app.state.eliteMode = true;
         }
 
-        // ---- Service worker registration (offline / PWA) ----
+        // ---- Service worker registration (offline / PWA + auto-update) ----
         if ('serviceWorker' in navigator && location.protocol !== 'file:') {
             window.addEventListener('load', () => {
                 navigator.serviceWorker.register('./service-worker.js')
+                    .then((registration) => {
+                        // Force an immediate check for a new SW
+                        registration.update().catch(() => { });
+
+                        // If a SW is ALREADY waiting when we arrive (rare but possible)
+                        if (registration.waiting && navigator.serviceWorker.controller) {
+                            app.showUpdateBanner(registration.waiting);
+                        }
+
+                        // Listen for new SW being found (an update is on the way)
+                        registration.addEventListener('updatefound', () => {
+                            const newWorker = registration.installing;
+                            if (!newWorker) return;
+                            newWorker.addEventListener('statechange', () => {
+                                if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+                                    // A previous SW exists → this is a TRUE update, not first install
+                                    app.showUpdateBanner(newWorker);
+                                }
+                            });
+                        });
+
+                        // Re-check for updates every 60 minutes while tab is open
+                        setInterval(() => {
+                            registration.update().catch(() => { });
+                        }, 60 * 60 * 1000);
+                    })
                     .catch((err) => console.warn('SW registration failed:', err.message));
+
+                // When the new SW takes control, reload exactly once
+                let _reloaded = false;
+                navigator.serviceWorker.addEventListener('controllerchange', () => {
+                    if (_reloaded) return;
+                    _reloaded = true;
+                    window.location.reload();
+                });
             });
         }
 
@@ -227,6 +261,7 @@ const app = {
 
     getRegionIcon: (region) => {
         const icons = {
+            "Introduction": "fa-graduation-cap",
             "Forelimb": "fa-hand-point-up",
             "Hindlimb & Pelvis": "fa-shoe-prints",
             "Thorax": "fa-lungs",
@@ -243,7 +278,17 @@ const app = {
             "Arthrology": "fa-link",
             "Neurology": "fa-brain",
             "Angiology": "fa-heartbeat",
-            "Splanchnology": "fa-lungs"
+            "Splanchnology": "fa-lungs",
+            "General Anatomy": "fa-compass",
+            "General Osteology": "fa-bone",
+            "General Arthrology": "fa-link",
+            "General Myology": "fa-running",
+            "General Angiology": "fa-heartbeat",
+            "General Neurology": "fa-brain",
+            "General Aesthesiology": "fa-eye",
+            "General Splanchnology": "fa-lungs",
+            "Surface Anatomy": "fa-male",
+            "Imaging Principles": "fa-x-ray"
         };
         return icons[system] || "fa-book-medical";
     },
@@ -388,18 +433,27 @@ const app = {
             `;
         }
 
-        // Image placeholder (if imgCode exists)
-        if (item.imgCode) {
+        // Visual reference (real image if present, placeholder fallback if only imgCode exists)
+        if (item.img || item.imgCode) {
             contentHtml += `
                 <div style="margin-top:30px; animation: detailFade 0.9s ease;">
                     <strong style="color:var(--text-mute); font-family:var(--font-code); display:block; margin-bottom:10px;">
                         <i class="fas fa-image"></i> VISUAL REFERENCE
                     </strong>
-                    <div style="background:var(--void); border:1px dashed var(--border); border-radius:8px; padding:40px; text-align:center; color:var(--text-mute);">
-                        <i class="fas fa-image" style="font-size:2rem; margin-bottom:10px;"></i>
-                        <div>Image: ${item.imgCode}</div>
-                        <div style="font-size:0.8rem; margin-top:5px;">(Integration ready)</div>
-                    </div>
+                    ${item.img ? `
+                        <figure class="img-container atlas-image-frame">
+                            <img class="atlas-reference-image" src="${item.img}" alt="${item.imgAlt || item.title + ' visual reference'}" loading="lazy">
+                            ${item.imgCaption ? `<figcaption class="atlas-image-caption">${item.imgCaption}</figcaption>` : ''}
+                        </figure>
+                    ` : `
+                        <div class="img-container">
+                            <div class="img-placeholder-text">
+                                <i class="fas fa-image" style="font-size:2rem; margin-bottom:10px;"></i>
+                                <div>Image: ${item.imgCode}</div>
+                                <div style="font-size:0.8rem; margin-top:5px;">(Integration ready)</div>
+                            </div>
+                        </div>
+                    `}
                 </div>
             `;
         }
@@ -509,6 +563,56 @@ const app = {
             const btn = document.querySelector(`.topic-btn[data-index="${idx}"]`);
             if (btn) app.renderDetail(idx, btn);
         }, 30);
+    },
+
+    // ============== PWA UPDATE FLOW ==============
+    _waitingWorker: null,
+
+    showUpdateBanner: (worker) => {
+        app._waitingWorker = worker;
+        const banner = document.getElementById('update-banner');
+        if (banner) {
+            banner.hidden = false;
+            // Trigger CSS slide-down
+            requestAnimationFrame(() => banner.classList.add('show'));
+        }
+    },
+
+    dismissUpdateBanner: () => {
+        const banner = document.getElementById('update-banner');
+        if (banner) {
+            banner.classList.remove('show');
+            setTimeout(() => { banner.hidden = true; }, 350);
+        }
+    },
+
+    // Called when the user clicks "Refresh now" on the update banner
+    applyUpdate: () => {
+        if (app._waitingWorker) {
+            app._waitingWorker.postMessage({ type: 'SKIP_WAITING' });
+            // controllerchange listener (set in init) will reload the page automatically
+        } else {
+            window.location.reload();
+        }
+    },
+
+    // Nuclear option — wipe all caches + unregister all SWs + reload
+    forceClearCacheAndReload: async () => {
+        if (!confirm('Reset cached site data and reload? Your bookmarks, quiz history, and progress are kept safe — only the cached app files will be cleared.')) return;
+        try {
+            if ('caches' in window) {
+                const keys = await caches.keys();
+                await Promise.all(keys.map((k) => caches.delete(k)));
+            }
+            if ('serviceWorker' in navigator) {
+                const regs = await navigator.serviceWorker.getRegistrations();
+                await Promise.all(regs.map((r) => r.unregister()));
+            }
+        } catch (e) {
+            console.warn('Cache reset issue:', e.message);
+        }
+        // Hard reload bypassing browser HTTP cache too
+        window.location.reload();
     }
 };
 
@@ -651,67 +755,219 @@ function explainLikeEngineer() {
     }, 800);
 }
 
+// =========================================================
+// WHY-SECTION QUIZ — Session Engine ("Challenge Me")
+// Distinct from Atlas Quiz: single-flow session with score,
+// streak, progress, results & review. No region/system wizard.
+// =========================================================
 const quizOverlay = document.getElementById('quizOverlay');
-const quizQuestion = document.getElementById('quizQuestion');
-const quizOptions = document.getElementById('quizOptions');
-const quizFeedback = document.getElementById('quizFeedback');
-const nextQuizBtn = document.getElementById('nextQuizBtn');
-let currentQuizData = null;
 
 function startQuiz() {
-    if (quizOverlay) {
-        quizOverlay.classList.add('open');
-        generateQuiz();
-    }
+    if (!quizOverlay) return;
+    quizOverlay.classList.add('open');
+    quizSession.toSetup();
 }
 
 function closeQuiz() {
-    if (quizOverlay) {
-        quizOverlay.classList.remove('open');
-    }
+    if (quizOverlay) quizOverlay.classList.remove('open');
 }
 
-function generateQuiz() {
-    quizQuestion.innerText = "Accessing Biomechanical Database...";
-    quizOptions.innerHTML = '<div style="color: var(--why-cyan); text-align: center;"><i class="fas fa-cog fa-spin fa-2x"></i></div>';
-    quizFeedback.style.display = 'none';
-    nextQuizBtn.style.display = 'none';
+const quizSession = {
+    pool: [],
+    queue: [],
+    idx: 0,
+    score: 0,
+    streak: 0,
+    bestStreak: 0,
+    target: 10,
+    category: 'all',
+    current: null,
+    wrongLog: [],
 
-    setTimeout(() => {
-        if (anatomyData && anatomyData.length > 0) {
-            const item = anatomyData[Math.floor(Math.random() * anatomyData.length)];
-            currentQuizData = item.quiz;
-            renderQuiz(currentQuizData);
+    // Show the setup screen
+    toSetup() {
+        document.getElementById('quizSetup').style.display = 'block';
+        document.getElementById('quizContent').style.display = 'none';
+        document.getElementById('quizResults').style.display = 'none';
+        // Wire chip selectors (idempotent)
+        document.querySelectorAll('#quizChips .quiz-chip').forEach(c => {
+            c.onclick = () => {
+                document.querySelectorAll('#quizChips .quiz-chip').forEach(x => x.classList.remove('active'));
+                c.classList.add('active');
+            };
+        });
+        document.querySelectorAll('#quizCountChips .quiz-chip').forEach(c => {
+            c.onclick = () => {
+                document.querySelectorAll('#quizCountChips .quiz-chip').forEach(x => x.classList.remove('active'));
+                c.classList.add('active');
+            };
+        });
+    },
+
+    // Begin a new session
+    start() {
+        const catBtn = document.querySelector('#quizChips .quiz-chip.active');
+        const cntBtn = document.querySelector('#quizCountChips .quiz-chip.active');
+        this.category = catBtn ? catBtn.dataset.cat : 'all';
+        const cnt = cntBtn ? parseInt(cntBtn.dataset.count, 10) : 10;
+
+        // Filter pool
+        if (!Array.isArray(anatomyData) || !anatomyData.length) return;
+        this.pool = anatomyData.filter(it => it.quiz && (this.category === 'all' || it.category === this.category));
+        if (!this.pool.length) {
+            alert('No questions available for this topic.');
+            return;
         }
-    }, 600);
-}
 
-function renderQuiz(data) {
-    quizQuestion.innerText = data.question;
-    quizOptions.innerHTML = '';
+        // Shuffle + slice
+        this.queue = this._shuffle(this.pool.slice());
+        this.target = (cnt === 0) ? 0 : Math.min(cnt, this.queue.length);
+        if (this.target > 0) this.queue = this.queue.slice(0, this.target);
 
-    data.options.forEach((opt, index) => {
-        const btn = document.createElement('button');
-        btn.className = 'quiz-btn';
-        btn.innerText = opt;
-        btn.onclick = () => checkAnswer(index, btn);
-        quizOptions.appendChild(btn);
-    });
-}
+        // Reset counters
+        this.idx = 0;
+        this.score = 0;
+        this.streak = 0;
+        this.bestStreak = 0;
+        this.wrongLog = [];
 
-function checkAnswer(selectedIndex, btnElement) {
-    const buttons = quizOptions.querySelectorAll('.quiz-btn');
-    buttons.forEach((b, idx) => {
-        b.disabled = true;
-        if (idx === currentQuizData.correctIndex) b.classList.add('correct');
-        else if (idx === selectedIndex) b.classList.add('wrong');
-    });
+        document.getElementById('quizSetup').style.display = 'none';
+        document.getElementById('quizResults').style.display = 'none';
+        document.getElementById('quizContent').style.display = 'block';
 
-    quizFeedback.style.display = 'block';
-    quizFeedback.innerHTML = `<strong>${selectedIndex === currentQuizData.correctIndex ? 'Correct!' : 'Incorrect.'}</strong> ${currentQuizData.explanation}`;
+        this._render();
+    },
 
-    nextQuizBtn.style.display = 'block';
-}
+    // Move to next question or finish
+    next() {
+        this.idx++;
+        if (this.target > 0 && this.idx >= this.target) {
+            this._showResults();
+            return;
+        }
+        if (this.target === 0 && this.idx >= this.queue.length) {
+            // Endless mode: reshuffle pool to keep going
+            this.queue = this._shuffle(this.pool.slice());
+            this.idx = 0;
+        }
+        this._render();
+    },
+
+    restart() { this.start(); },
+
+    _render() {
+        const item = this.queue[this.idx];
+        if (!item) return;
+        this.current = item;
+        const q = item.quiz;
+        const total = this.target > 0 ? this.target : '∞';
+        document.getElementById('hudProgress').innerText = `${this.idx + 1}/${total}`;
+        document.getElementById('hudScore').innerText = this.score;
+        document.getElementById('hudStreak').innerHTML = `${this.streak}&nbsp;<i class="fas fa-fire" style="color:${this.streak >= 3 ? '#ff7a00' : '#888'};"></i>`;
+        const pct = this.target > 0 ? ((this.idx) / this.target) * 100 : ((this.idx % 10) / 10) * 100;
+        document.getElementById('quizProgressFill').style.width = pct + '%';
+
+        const tag = document.getElementById('quizTopicTag');
+        tag.innerText = (item.title || '') + ' · ' + (item.category || '').toUpperCase();
+
+        document.getElementById('quizQuestion').innerText = q.question;
+
+        const opts = document.getElementById('quizOptions');
+        opts.innerHTML = '';
+        q.options.forEach((opt, i) => {
+            const btn = document.createElement('button');
+            btn.className = 'quiz-btn';
+            btn.innerText = opt;
+            btn.onclick = () => this._answer(i, btn);
+            opts.appendChild(btn);
+        });
+
+        document.getElementById('quizFeedback').style.display = 'none';
+        document.getElementById('nextQuizBtn').style.display = 'none';
+    },
+
+    _answer(selectedIdx, btn) {
+        const q = this.current.quiz;
+        const buttons = document.querySelectorAll('#quizOptions .quiz-btn');
+        const correct = (selectedIdx === q.correctIndex);
+
+        buttons.forEach((b, i) => {
+            b.disabled = true;
+            if (i === q.correctIndex) b.classList.add('correct');
+            else if (i === selectedIdx) b.classList.add('wrong');
+        });
+
+        if (correct) {
+            this.score++;
+            this.streak++;
+            if (this.streak > this.bestStreak) this.bestStreak = this.streak;
+        } else {
+            this.streak = 0;
+            this.wrongLog.push({
+                title: this.current.title,
+                question: q.question,
+                correct: q.options[q.correctIndex],
+                explanation: q.explanation
+            });
+        }
+
+        const fb = document.getElementById('quizFeedback');
+        fb.style.display = 'block';
+        fb.className = 'quiz-feedback ' + (correct ? 'fb-good' : 'fb-bad');
+        fb.innerHTML = `<strong>${correct ? '✓ Correct!' : '✗ Not quite.'}</strong> ${q.explanation}`;
+
+        // Update HUD live
+        document.getElementById('hudScore').innerText = this.score;
+        document.getElementById('hudStreak').innerHTML = `${this.streak}&nbsp;<i class="fas fa-fire" style="color:${this.streak >= 3 ? '#ff7a00' : '#888'};"></i>`;
+
+        document.getElementById('nextQuizBtn').style.display = 'inline-flex';
+    },
+
+    _showResults() {
+        document.getElementById('quizContent').style.display = 'none';
+        document.getElementById('quizResults').style.display = 'block';
+        const total = this.target;
+        const pct = total > 0 ? Math.round((this.score / total) * 100) : 0;
+
+        let grade = 'Keep Practising', badge = 'fa-seedling';
+        if (pct >= 90) { grade = 'Master Anatomist'; badge = 'fa-crown'; }
+        else if (pct >= 75) { grade = 'Excellent'; badge = 'fa-trophy'; }
+        else if (pct >= 60) { grade = 'Solid Pass'; badge = 'fa-medal'; }
+        else if (pct >= 40) { grade = 'Needs Review'; badge = 'fa-book'; }
+
+        const badgeEl = document.getElementById('quizResultBadge');
+        badgeEl.innerHTML = `<i class="fas ${badge}"></i>`;
+        document.getElementById('quizResultTitle').innerText = 'Session Complete';
+        document.getElementById('quizResultScore').innerText = `${this.score} / ${total}`;
+        document.getElementById('quizResultGrade').innerText = grade + ' · ' + pct + '%';
+        document.getElementById('resBestStreak').innerText = this.bestStreak;
+        document.getElementById('resAccuracy').innerText = pct + '%';
+        document.getElementById('resTopic').innerText = this.category === 'all' ? 'All' : this.category;
+
+        const rev = document.getElementById('quizReviewBox');
+        if (this.wrongLog.length === 0) {
+            rev.innerHTML = '<div class="quiz-review-perfect"><i class="fas fa-check-circle"></i> Perfect run — no review needed.</div>';
+        } else {
+            rev.innerHTML = '<div class="quiz-review-head">Review missed questions</div>' +
+                this.wrongLog.map(w =>
+                    `<div class="quiz-review-item">
+                        <div class="qri-title">${w.title}</div>
+                        <div class="qri-q">${w.question}</div>
+                        <div class="qri-a">✓ ${w.correct}</div>
+                        <div class="qri-exp">${w.explanation}</div>
+                     </div>`
+                ).join('');
+        }
+    },
+
+    _shuffle(arr) {
+        for (let i = arr.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [arr[i], arr[j]] = [arr[j], arr[i]];
+        }
+        return arr;
+    }
+};
 
 document.addEventListener('DOMContentLoaded', () => {
     app.init();

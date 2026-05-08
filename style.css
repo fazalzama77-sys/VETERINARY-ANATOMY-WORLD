@@ -335,11 +335,80 @@ body {
     height: calc(100vh - 140px);
 }
 
+.sidebar-wrap {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    min-height: 0;
+}
+
 .sidebar {
     background: rgba(10, 25, 47, 0.5);
     border: 1px solid var(--border);
     border-radius: 8px;
     overflow-y: auto;
+    flex: 1 1 auto;
+    min-height: 0;
+}
+
+/* ============== READ-PROGRESS BADGE (top of sidebar) ============== */
+.read-progress-badge {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 14px;
+    background: linear-gradient(135deg, rgba(0,242,255,0.10), rgba(80,220,150,0.06));
+    border: 1px solid rgba(80,220,150,0.30);
+    border-radius: 10px;
+    font-family: var(--font-code);
+    font-size: 0.78rem;
+    color: var(--text-main);
+}
+.read-progress-badge .rp-text {
+    display: flex; align-items: center; gap: 6px;
+    color: #50dc96;
+    white-space: nowrap;
+    font-weight: 600;
+}
+.read-progress-badge .rp-bar {
+    flex: 1; height: 6px;
+    background: rgba(255,255,255,0.08);
+    border-radius: 999px; overflow: hidden;
+    box-shadow: inset 0 1px 2px rgba(0,0,0,0.3);
+}
+.read-progress-badge .rp-fill {
+    display: block; height: 100%;
+    background: linear-gradient(90deg, #50dc96, #00f2ff);
+    border-radius: 999px;
+    transition: width .4s cubic-bezier(.4, 0, .2, 1);
+    box-shadow: 0 0 8px rgba(80,220,150,0.50);
+}
+.read-progress-badge .rp-pct {
+    color: #ffffff; font-weight: 700; min-width: 36px; text-align: right;
+}
+body.professional-mode .read-progress-badge {
+    background: #ffffff;
+    border-color: #1565c0;
+    color: #263238;
+}
+body.professional-mode .read-progress-badge .rp-text { color: #1b8754; }
+body.professional-mode .read-progress-badge .rp-bar { background: #e0e0e0; }
+body.professional-mode .read-progress-badge .rp-pct { color: #263238; }
+
+/* ============== READ TICK ON TOPIC BUTTONS ============== */
+.topic-btn .read-tick {
+    color: #50dc96;
+    margin-right: 4px;
+    filter: drop-shadow(0 0 2px rgba(80,220,150,0.5));
+}
+.topic-btn.is-read {
+    background: linear-gradient(90deg, rgba(80,220,150,0.10), transparent 80%);
+    border-left: 3px solid #50dc96;
+}
+body.professional-mode .topic-btn .read-tick { color: #1b8754; filter: none; }
+body.professional-mode .topic-btn.is-read {
+    background: rgba(27,135,84,0.06);
+    border-left-color: #1b8754;
 }
 
 .topic-btn {
@@ -530,9 +599,17 @@ body {
     display: grid;
     grid-template-columns: repeat(3, 1fr);
     gap: 20px;
-    height: 100%;
-    align-content: center;
+    /* Smoothly scroll when more cards exist than fit */
+    max-height: 100%;
+    overflow-y: auto;
+    align-content: start;
+    padding: 8px 4px 24px;       /* breathing room at top + bottom */
+    scrollbar-width: thin;
 }
+.quiz-menu-grid::-webkit-scrollbar { width: 8px; }
+.quiz-menu-grid::-webkit-scrollbar-track { background: rgba(255,255,255,0.04); border-radius: 4px; }
+.quiz-menu-grid::-webkit-scrollbar-thumb { background: rgba(0,242,255,0.30); border-radius: 4px; }
+.quiz-menu-grid::-webkit-scrollbar-thumb:hover { background: rgba(0,242,255,0.50); }
 
 .quiz-mode-card {
     background: rgba(255, 255, 255, 0.05);
@@ -1298,6 +1375,45 @@ body.professional-mode .credit-foot { color: #607d8b; }
     justify-content: center;
     padding: 20px;
     border-right: 1px solid rgba(255, 255, 255, 0.05);
+    position: relative;
+    min-height: 240px;
+}
+
+/* Skeleton shimmer while image is fetching */
+#why-view .modal-image-col.img-loading::before {
+    content: "";
+    position: absolute;
+    inset: 20px;
+    border-radius: 8px;
+    background:
+        linear-gradient(90deg,
+            rgba(0,242,255,0.04) 0%,
+            rgba(0,242,255,0.18) 50%,
+            rgba(0,242,255,0.04) 100%);
+    background-size: 200% 100%;
+    animation: imgShimmer 1.4s ease-in-out infinite;
+}
+#why-view .modal-image-col.img-loading::after {
+    content: "Loading image…";
+    position: absolute;
+    color: var(--why-cyan);
+    font-family: var(--font-code);
+    font-size: 0.78rem;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    opacity: 0.7;
+}
+#why-view .modal-image-col.img-error::before {
+    content: "Image unavailable";
+    color: #ff7070;
+    font-family: var(--font-code);
+    font-size: 0.85rem;
+    text-align: center;
+    opacity: 0.7;
+}
+@keyframes imgShimmer {
+    0%   { background-position: 100% 50%; }
+    100% { background-position: -100% 50%; }
 }
 
 #why-view .modal-img {
@@ -1305,6 +1421,11 @@ body.professional-mode .credit-foot { color: #607d8b; }
     height: auto;
     border-radius: 8px;
     box-shadow: 0 0 20px rgba(0, 242, 255, 0.1);
+    opacity: 0;
+    transition: opacity 0.35s ease;
+}
+#why-view .modal-img.img-loaded {
+    opacity: 1;
 }
 
 #why-view .modal-text-col {
@@ -2003,6 +2124,37 @@ body {
     }
 }
 
+/* ============================================================
+   MOBILE NAV — collapse text labels, icon-only nav-btn buttons
+   on phones so 4 buttons fit in one row without crowding.
+   The accessible label is preserved via title/aria for screen readers.
+   ============================================================ */
+@media (max-width: 600px) {
+    .nav-bar {
+        gap: 8px !important;
+        padding: 8px 10px !important;
+    }
+    /* Compact icon-only buttons for nav, EXCEPT the BACK and HOME buttons
+       which keep their label so user always knows the way out */
+    .nav-bar .nav-btn:not(:first-child):not(.nav-btn-keep-label) {
+        padding: 10px 12px !important;
+        min-width: 44px;
+        font-size: 0;          /* hides label text */
+    }
+    .nav-bar .nav-btn:not(:first-child):not(.nav-btn-keep-label) i {
+        font-size: 1.05rem;     /* icon stays normal */
+        margin: 0;
+    }
+    .nav-bar .nav-btn:not(:first-child):not(.nav-btn-keep-label) span {
+        display: none;
+    }
+    /* Crumb shrinks slightly */
+    .nav-bar .badge {
+        font-size: 0.7rem !important;
+        padding: 5px 8px !important;
+    }
+}
+
 /* =========================================================
    PROFESSIONAL THEME OVERRIDES - ENHANCED WITH MEDICAL COLORS
    ========================================================= */
@@ -2034,6 +2186,58 @@ body {
     transform: scale(1.05);
     border-color: var(--atlas-gold);
     box-shadow: 0 0 20px rgba(255, 215, 0, 0.2);
+}
+
+/* ============================================================
+   AUTO-HIDE FLOATING TOGGLE WHEN ANY OVERLAY/TOOLTIP IS OPEN
+   Triggers (any one of these = hide):
+     • body.body-modal-open  (set by atlas quiz openMenu/close)
+     • .modal-overlay.open present (WHY card modal)
+     • .quiz-overlay.open present  (WHY engineering challenge)
+     • a glossary tooltip is being shown via :focus / :hover on .gloss-term
+   Smooth fade so it never feels jumpy, fully reversible.
+   ============================================================ */
+body.body-modal-open .theme-toggle-btn,
+body.body-modal-open .elite-toggle-btn {
+    opacity: 0;
+    pointer-events: none;
+    transform: translateY(20px) scale(0.85);
+}
+
+/* Modern browsers (Chrome 105+, Safari 15.4+, Firefox 121+) — :has() lets pure CSS detect open overlays */
+@supports selector(:has(*)) {
+    body:has(.modal-overlay.open) .theme-toggle-btn,
+    body:has(.modal-overlay.open) .elite-toggle-btn,
+    body:has(.quiz-overlay.open) .theme-toggle-btn,
+    body:has(.quiz-overlay.open) .elite-toggle-btn,
+    body:has(.gloss-term:focus) .theme-toggle-btn,
+    body:has(.gloss-term:focus) .elite-toggle-btn {
+        opacity: 0;
+        pointer-events: none;
+        transform: translateY(20px) scale(0.85);
+    }
+    /* On mobile (where tooltip is fixed at viewport bottom), also hide on hover */
+    @media (max-width: 600px) {
+        body:has(.gloss-term:hover) .theme-toggle-btn,
+        body:has(.gloss-term:hover) .elite-toggle-btn {
+            opacity: 0;
+            pointer-events: none;
+            transform: translateY(20px) scale(0.85);
+        }
+    }
+}
+
+/* Mobile: shrink toggle slightly so it never crowds the corner */
+@media (max-width: 600px) {
+    .theme-toggle-btn {
+        padding: 10px 14px;
+        font-size: 0.78rem;
+        bottom: 14px;
+        left: 14px;
+    }
+    .theme-toggle-btn #theme-text {
+        display: none;   /* icon-only on tiny screens */
+    }
 }
 
 
@@ -3096,6 +3300,61 @@ body.professional-mode .toast.warning { border-left: 3px solid #f57c00; }
 }
 .bm-btn.active i { color: var(--atlas-gold, gold); }
 
+/* ============== MARK AS READ BUTTON ============== */
+.detail-header-actions {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+.read-btn {
+    background: transparent;
+    border: 1px solid var(--border, rgba(255,255,255,0.15));
+    color: var(--text-mute, #888);
+    padding: 8px 14px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-family: var(--font-code, monospace);
+    font-size: 0.85rem;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    transition: all 0.2s ease;
+}
+.read-btn:hover {
+    border-color: #50dc96;
+    color: #50dc96;
+    background: rgba(80,220,150,0.08);
+}
+.read-btn.active {
+    background: linear-gradient(135deg, rgba(80,220,150,0.18), rgba(0,242,255,0.10));
+    border-color: #50dc96;
+    color: #50dc96;
+    font-weight: 600;
+}
+.read-btn.active i { color: #50dc96; }
+.read-btn.active::after {
+    content: "✓";
+    font-size: 0.7rem;
+    opacity: 0.6;
+    margin-left: 2px;
+}
+body.professional-mode .read-btn {
+    border-color: #cfd8dc;
+    color: #455a64;
+    background: #ffffff;
+}
+body.professional-mode .read-btn:hover {
+    border-color: #1b8754;
+    color: #1b8754;
+    background: #e8f5ee;
+}
+body.professional-mode .read-btn.active {
+    background: #d4edda;
+    border-color: #1b8754;
+    color: #1b8754;
+}
+body.professional-mode .read-btn.active i { color: #1b8754; }
+
 .bm-star {
   color: var(--atlas-gold, gold);
   font-size: 0.8em;
@@ -3143,6 +3402,11 @@ body.professional-mode .bm-btn.active {
   transform: translateY(8px);
   width: max-content;
   max-width: 320px;
+  /* Long definitions become scrollable instead of pushing off-screen */
+  max-height: 240px;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
   padding: 10px 14px;
   background: #14141f;
   color: #e8e8f0;
@@ -3158,6 +3422,11 @@ body.professional-mode .bm-btn.active {
   pointer-events: none;
   transition: opacity 0.15s ease;
   box-shadow: 0 6px 24px rgba(0,0,0,0.4);
+}
+/* Allow user to scroll the tooltip when focused (tap on mobile) */
+.gloss-term:hover::after,
+.gloss-term:focus::after {
+  pointer-events: auto;
 }
 .gloss-term:hover::after,
 .gloss-term:focus::after {
@@ -3184,15 +3453,20 @@ body.professional-mode .gloss-term::after {
   box-shadow: 0 6px 24px rgba(0,0,0,0.18);
 }
 
-/* On small screens, anchor tooltip to viewport rather than term */
+/* On small screens, anchor tooltip to TOP of viewport so it never collides
+   with the bottom-left floating toggle. (Toggle also auto-hides while a
+   tooltip is shown via :focus on .gloss-term — this is the visual fallback.) */
 @media (max-width: 600px) {
   .gloss-term::after {
     position: fixed;
     left: 12px !important;
     right: 12px !important;
-    bottom: 12px;
-    top: auto;
+    top: 12px;
+    bottom: auto;
     transform: none;
     max-width: calc(100% - 24px);
+    max-height: 60vh;          /* never covers >60% of screen */
+    overflow-y: auto;
+    z-index: 10000;            /* above modal/toggle so it's always readable */
   }
 }

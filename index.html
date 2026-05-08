@@ -201,15 +201,15 @@
 
         <!-- Right side: Elite Toggle + Bookmarks + Quiz -->
         <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
-          <!-- ELITE TOGGLE (Only visible when viewing content) -->
-          <button class="nav-btn elite-toggle-btn" id="elite-toggle" onclick="app.toggleElite()" style="display:none;">
+          <!-- ELITE TOGGLE (Only visible when viewing content; icon-only on tiny phones) -->
+          <button class="nav-btn elite-toggle-btn nav-btn-icon-only-mobile" id="elite-toggle" onclick="app.toggleElite()" style="display:none;">
             <i class="fas fa-graduation-cap"></i> <span id="elite-text">Elite View</span>
           </button>
-          <button class="nav-btn" onclick="app.showBookmarks(); app.setHash('#/bookmarks');"
+          <button class="nav-btn nav-btn-keep-label" onclick="app.showBookmarks(); app.setHash('#/bookmarks');"
             title="View bookmarked topics" aria-label="My Bookmarks">
             <i class="fas fa-star"></i> BOOKMARKS
           </button>
-          <button class="nav-btn" style="border-color: var(--atlas-gold); color: var(--atlas-gold);"
+          <button class="nav-btn nav-btn-keep-label" style="border-color: var(--atlas-gold); color: var(--atlas-gold);"
             onclick="quizApp.openMenu()">
             <i class="fas fa-brain"></i> QUIZ MODE
           </button>

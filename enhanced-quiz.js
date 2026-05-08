@@ -48,11 +48,13 @@ const quizApp = {
         quizApp.cleanup();
         document.getElementById('quiz-overlay').style.display = 'none';
         document.body.classList.remove('body-modal-open');
+        document.body.style.overflow = '';   // restore page scrolling
       }
     } else {
       quizApp.cleanup();
       document.getElementById('quiz-overlay').style.display = 'none';
       document.body.classList.remove('body-modal-open');
+      document.body.style.overflow = '';     // restore page scrolling
     }
   },
 
@@ -235,12 +237,14 @@ const quizApp = {
       return;
     }
 
-    // Open the quiz overlay
-    document.getElementById('quiz-overlay').style.display = 'flex';
-    document.querySelector('.quiz-modal').classList.remove('review-mode');
+    // ---- Lock the page first so the modal can claim the full viewport ----
+    // Without this, on mobile the underlying dashboard's scroll position
+    // + URL-bar resize can cause the modal to render at desktop dimensions.
+    window.scrollTo({ top: 0, behavior: 'instant' });
+    document.body.style.overflow = 'hidden';      // freeze background scroll
     document.body.classList.add('body-modal-open');
 
-    // Setup quiz state
+    // ---- Setup quiz state ----
     quizApp.mode = 'mcq';
     quizApp.score = 0;
     quizApp.wrong = 0;
@@ -267,10 +271,26 @@ const quizApp = {
     quizApp.startTime = Date.now();
     quizApp.startTimer();
 
+    // ---- Show the overlay AFTER state is ready ----
+    const overlay = document.getElementById('quiz-overlay');
+    const modal = document.querySelector('.quiz-modal');
+    modal.classList.remove('review-mode');
+    overlay.style.display = 'flex';
     quizApp.hideAllViews();
     document.getElementById('quiz-active-view').style.display = 'flex';
-    quizApp.renderQuestion();
-    quizApp.updateNavigationControls();
+
+    // Force a layout reflow so the @media (max-width: 900px) rules
+    // apply to the freshly-displayed modal on mobile. Without this,
+    // some phones (iOS Safari especially) keep the previous desktop dims.
+    void modal.offsetHeight;
+    modal.style.opacity = '0';
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        modal.style.opacity = '';
+        quizApp.renderQuestion();
+        quizApp.updateNavigationControls();
+      });
+    });
   },
 
   start: (mode) => {

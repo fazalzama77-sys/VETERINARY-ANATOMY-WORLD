@@ -2125,34 +2125,49 @@ body {
 }
 
 /* ============================================================
-   MOBILE NAV — collapse text labels, icon-only nav-btn buttons
-   on phones so 4 buttons fit in one row without crowding.
-   The accessible label is preserved via title/aria for screen readers.
+   MOBILE NAV — compact spacing on phones so labels still fit.
+   Nav-btns marked .nav-btn-keep-label (e.g. BOOKMARKS, QUIZ MODE)
+   keep BOTH icon and label so new students always know what they're tapping.
+   Only buttons WITHOUT that class become icon-only when space is tight.
    ============================================================ */
 @media (max-width: 600px) {
     .nav-bar {
-        gap: 8px !important;
+        gap: 6px !important;
         padding: 8px 10px !important;
     }
-    /* Compact icon-only buttons for nav, EXCEPT the BACK and HOME buttons
-       which keep their label so user always knows the way out */
-    .nav-bar .nav-btn:not(:first-child):not(.nav-btn-keep-label) {
+    /* Compact every nav-btn slightly so multiple buttons fit a phone row */
+    .nav-bar .nav-btn {
+        padding: 9px 12px !important;
+        font-size: 0.72rem !important;
+        letter-spacing: 0.5px;
+    }
+    .nav-bar .nav-btn i { font-size: 0.95rem; }
+    /* Only icon-only-by-default for explicitly-marked secondary buttons
+       (e.g. Elite Toggle). Keep label whenever .nav-btn-keep-label is present
+       OR when it's the BACK button (first-child). */
+    .nav-bar .nav-btn.nav-btn-icon-only-mobile:not(.nav-btn-keep-label) {
         padding: 10px 12px !important;
         min-width: 44px;
-        font-size: 0;          /* hides label text */
+        font-size: 0;
     }
-    .nav-bar .nav-btn:not(:first-child):not(.nav-btn-keep-label) i {
-        font-size: 1.05rem;     /* icon stays normal */
+    .nav-bar .nav-btn.nav-btn-icon-only-mobile:not(.nav-btn-keep-label) i {
+        font-size: 1.05rem;
         margin: 0;
     }
-    .nav-bar .nav-btn:not(:first-child):not(.nav-btn-keep-label) span {
+    .nav-bar .nav-btn.nav-btn-icon-only-mobile:not(.nav-btn-keep-label) span {
         display: none;
     }
     /* Crumb shrinks slightly */
     .nav-bar .badge {
-        font-size: 0.7rem !important;
+        font-size: 0.68rem !important;
         padding: 5px 8px !important;
     }
+}
+
+/* On very small phones (≤380px), labels can wrap onto multiple lines
+   if 4 buttons share the row. Allow flex-wrap as a graceful fallback. */
+@media (max-width: 380px) {
+    .nav-bar { flex-wrap: wrap !important; }
 }
 
 /* =========================================================

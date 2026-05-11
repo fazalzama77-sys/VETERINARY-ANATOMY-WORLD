@@ -1,0 +1,28 @@
+# =============================================================
+# IVRI Anatomy — files Git should IGNORE (don't upload to GitHub)
+# =============================================================
+
+# Raw image originals — they're huge and only needed locally on your PC.
+# Only the COMPRESSED versions in images/ get uploaded to the website.
+images-raw/
+
+# Python cache (created automatically when compress.py runs)
+__pycache__/
+*.pyc
+*.pyo
+
+# OS junk files
+.DS_Store
+Thumbs.db
+desktop.ini
+*~
+
+# IDE/editor temp files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Local environment / secrets (just in case)
+.env
+*.local

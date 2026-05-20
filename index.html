@@ -52,20 +52,152 @@
   <link rel="stylesheet" href="dashboard.css">
   <link rel="manifest" href="manifest.json">
   <meta name="theme-color" content="#0a0a14">
+
+  <!-- ===== INSTANT SPLASH (GPU-accelerated, 60fps, snappy fade) ===== -->
+  <style>
+    html, body { background: #0a0a14; }
+    #ivri-splash {
+      position: fixed; inset: 0; z-index: 99999;
+      background: radial-gradient(circle at 50% 45%, #142036 0%, #0a0a14 60%);
+      display: flex; align-items: center; justify-content: center;
+      flex-direction: column; gap: 28px;
+      /* Faster, more cinematic fade-out */
+      transition: opacity .35s cubic-bezier(.4,0,.2,1), visibility .35s linear;
+      contain: layout paint;  /* isolates the splash so it can't slow the rest of the page */
+    }
+    #ivri-splash.hide { opacity: 0; visibility: hidden; pointer-events: none; }
+    /* Logo: only transform animates (GPU layer) */
+    #ivri-splash .ivri-logo {
+      width: 144px; height: 144px;
+      display: flex; align-items: center; justify-content: center;
+      will-change: transform;
+      animation: ivri-pulse 1.4s ease-in-out infinite;
+    }
+    #ivri-splash .ivri-logo img {
+      width: 100%; height: 100%; display: block;
+    }
+    /* Static glow behind logo — NOT animated, no per-frame cost */
+    #ivri-splash .ivri-glow {
+      position: absolute;
+      width: 220px; height: 220px;
+      border-radius: 50%;
+      background: radial-gradient(circle, rgba(0,242,255,0.35) 0%, transparent 70%);
+      pointer-events: none;
+    }
+    #ivri-splash .ivri-ring {
+      width: 44px; height: 44px; border-radius: 50%;
+      border: 2.5px solid rgba(0,242,255,0.15);
+      border-top-color: #00f2ff;
+      will-change: transform;
+      animation: ivri-spin .85s linear infinite;
+    }
+    #ivri-splash .ivri-tag {
+      color: #7fa1c4; font-family: Inter, system-ui, sans-serif;
+      font-size: 12px; letter-spacing: 4px; text-transform: uppercase;
+      font-weight: 500;
+      opacity: 0;
+      animation: ivri-tag-in .6s .15s ease-out forwards;
+    }
+    /* Animate ONLY transform — GPU-only, no layout/paint */
+    @keyframes ivri-pulse {
+      0%, 100% { transform: scale(1); }
+      50%      { transform: scale(1.06); }
+    }
+    @keyframes ivri-spin { to { transform: rotate(360deg); } }
+    @keyframes ivri-tag-in {
+      from { opacity: 0; transform: translateY(6px); }
+      to   { opacity: .75; transform: translateY(0); }
+    }
+    /* Respect reduced-motion preference */
+    @media (prefers-reduced-motion: reduce) {
+      #ivri-splash .ivri-logo,
+      #ivri-splash .ivri-ring { animation: none; }
+      #ivri-splash { transition: opacity .2s ease; }
+    }
+  </style>
 </head>
 
 <body>
+  <!-- Splash overlay (auto-removed once page is ready) -->
+  <div id="ivri-splash" aria-hidden="true">
+    <div style="position:relative; display:flex; align-items:center; justify-content:center;">
+      <div class="ivri-glow"></div>
+      <div class="ivri-logo"><img src="images/icon-512.png" alt=""></div>
+    </div>
+    <div class="ivri-ring"></div>
+    <div class="ivri-tag">IVRI Anatomy</div>
+  </div>
+  <script>
+    (function () {
+      var splash = document.getElementById('ivri-splash');
+      var hidden = false;
+      function hide() {
+        if (hidden) return;
+        hidden = true;
+        splash.classList.add('hide');
+        setTimeout(function () { splash.remove(); }, 400);
+      }
+      // Hide as soon as DOM is interactive (faster than waiting for full load)
+      if (document.readyState === 'complete' || document.readyState === 'interactive') {
+        requestAnimationFrame(hide);
+      } else {
+        document.addEventListener('DOMContentLoaded', function () {
+          requestAnimationFrame(hide);
+        });
+      }
+      // Hard ceiling: never block past 2.5s
+      setTimeout(hide, 2500);
+    })();
+  </script>
 
-  <!-- ================= UPDATE BANNER (PWA auto-update) ================= -->
-  <div id="update-banner" class="update-banner" hidden role="alert" aria-live="polite">
-    <i class="fas fa-cloud-arrow-down"></i>
-    <span class="update-banner-text">A new version is available.</span>
-    <button class="update-btn primary" onclick="app.applyUpdate()">
-      <i class="fas fa-rotate"></i> Refresh now
-    </button>
-    <button class="update-btn dismiss" onclick="app.dismissUpdateBanner()" aria-label="Dismiss" title="Dismiss">
-      &times;
-    </button>
+  <!-- ================= BIOLOGICAL NETWORK & HIGH-TECH SCIENTIFIC BACKDROP ================= -->
+  <div class="bio-bg-container" aria-hidden="true">
+    <svg class="bio-bg-svg" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1440 900" preserveAspectRatio="xMidYMid slice">
+      <!-- Ambient colorful radial glows -->
+      <defs>
+        <radialGradient id="mesh-glow-1" cx="20%" cy="30%" r="50%">
+          <stop offset="0%" stop-color="var(--bg-glow-start, rgba(0, 242, 255, 0.12))" />
+          <stop offset="100%" stop-color="transparent" />
+        </radialGradient>
+        <radialGradient id="mesh-glow-2" cx="80%" cy="70%" r="60%">
+          <stop offset="0%" stop-color="var(--bg-glow-end, rgba(255, 215, 0, 0.06))" />
+          <stop offset="100%" stop-color="transparent" />
+        </radialGradient>
+      </defs>
+      <rect width="100%" height="100%" fill="url(#mesh-glow-1)" opacity="0.8" />
+      <rect width="100%" height="100%" fill="url(#mesh-glow-2)" opacity="0.8" />
+
+      <!-- Biological grid structures -->
+      <g class="bio-grid" stroke="var(--bg-grid-color, rgba(255, 255, 255, 0.025))" stroke-width="1">
+        <path d="M 0,150 L 1440,150 M 0,300 L 1440,300 M 0,450 L 1440,450 M 0,600 L 1440,600 M 0,750 L 1440,750" />
+        <path d="M 240,0 L 240,900 M 480,0 L 480,900 M 720,0 L 720,900 M 960,0 L 960,900 M 1200,0 L 1200,900" />
+      </g>
+
+      <!-- Static Connecting paths -->
+      <g class="bio-paths" stroke-width="1.5" stroke-dasharray="8 8" opacity="0.15">
+        <path d="M 150,200 Q 400,100 720,250 T 1300,180" fill="none" stroke="var(--why-cyan)" />
+        <path d="M 250,750 Q 700,800 960,600 T 1150,650" fill="none" stroke="var(--atlas-gold)" opacity="0.8" />
+      </g>
+    </svg>
+
+    <!-- HTML Hardware-Accelerated Particles & Cells -->
+    <div class="bio-particles">
+      <div class="float-node float-node-1" style="left: 10.4%; top: 22.2%; --color: var(--why-cyan); --size: 8px;"></div>
+      <div class="float-node float-node-2" style="left: 90.2%; top: 20.0%; --color: var(--atlas-gold); --size: 10px;"></div>
+      <div class="float-node float-node-3" style="left: 17.3%; top: 83.3%; --color: var(--why-cyan); --size: 12px;"></div>
+      <div class="float-node float-node-4" style="left: 79.8%; top: 72.2%; --color: var(--atlas-gold); --size: 8px;"></div>
+      
+      <div class="floating-cell floating-cell-1" style="left: 8.3%; top: 40.0%;">
+        <svg viewBox="0 0 100 100" width="80" height="80">
+          <path d="M 20,40 C 30,10 70,0 80,30 C 90,60 50,80 40,70 C 30,60 10,70 20,40 Z" fill="none" stroke="var(--bg-cell-color, rgba(0, 242, 255, 0.035))" stroke-width="2" />
+        </svg>
+      </div>
+      <div class="floating-cell floating-cell-2" style="left: 84.7%; top: 53.3%;">
+        <svg viewBox="0 0 100 100" width="80" height="80">
+          <path d="M 20,50 C 0,20 50,0 70,30 C 90,60 40,80 30,60 Z" fill="none" stroke="var(--bg-cell-color, rgba(0, 242, 255, 0.035))" stroke-width="2" />
+        </svg>
+      </div>
+    </div>
   </div>
 
   <!-- ================= THEME TOGGLE (Moved to Top-Left to avoid overlap) ================= -->
@@ -103,7 +235,7 @@
 
   <!-- ================= VIEW 1: LANDING ================= -->
   <section id="landing-view" class="view-section active">
-    <div class="badge">IVRI BAREILLY • ANATOMY DEPARTMENT</div>
+    <div class="badge">IVRI BAREILLY • ANATOMY Section</div>
     <h1 class="hero-title">EXPLORING ANATOMY<br>THROUGH TECHNOLOGY</h1>
 
     <div class="portal-grid">
@@ -167,7 +299,7 @@
             <li><b>Dr. Elizabeth V.L. Hmangaihzuali</b><span class="credit-role">Scientist</span></li>
             <li><b>Dr. Samikshya Sarangi</b><span class="credit-role">Scientist</span></li>
           </ul>
-          <div class="credit-foot">Anatomy Department, IVRI, Bareilly</div>
+          <div class="credit-foot">Anatomy Section, IVRI, Bareilly</div>
         </div>
 
         <!-- RIGHT: Concept Designer & Platform Developer -->
@@ -213,6 +345,16 @@
           <button class="nav-btn nav-btn-keep-label" onclick="app.showBookmarks(); app.setHash('#/bookmarks');"
             title="View bookmarked topics" aria-label="My Bookmarks">
             <i class="fas fa-star"></i> BOOKMARKS
+          </button>
+          <button class="nav-btn nav-btn-icon-only-mobile" onclick="app.showHighlights(); app.setHash('#/highlights');"
+            title="View all your highlighted text" aria-label="My Highlights"
+            style="border-color: #ffd54f; color: #ffd54f;">
+            <i class="fas fa-highlighter"></i> <span>HIGHLIGHTS</span>
+          </button>
+          <button class="nav-btn nav-btn-icon-only-mobile" onclick="app.showNotes(); app.setHash('#/notes');"
+            title="View all your typed notes" aria-label="My Notes"
+            style="border-color: var(--why-cyan); color: var(--why-cyan);">
+            <i class="fas fa-sticky-note"></i> <span>NOTES</span>
           </button>
           <button class="nav-btn nav-btn-keep-label" style="border-color: var(--atlas-gold); color: var(--atlas-gold);"
             onclick="quizApp.openMenu()">
@@ -470,6 +612,72 @@
             <p class="mode-count" id="fib-count">0 questions</p>
             <div class="mode-desc">Type the correct answer</div>
           </div>
+          <div class="quiz-mode-card exam-card" onclick="quizApp.openExamConfig()" id="exam-card">
+            <i class="fas fa-graduation-cap mode-icon" style="color:#ff7a00;"></i>
+            <h3>EXAM MODE</h3>
+            <p class="mode-count">Timed mock exam</p>
+            <div class="mode-desc">Customisable: pick duration + question count + format. No instant feedback — like a real exam.</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- EXAM MODE CONFIG OVERLAY -->
+      <div id="exam-config-overlay" class="exam-config-overlay" style="display:none;" onclick="if(event.target===this) quizApp.closeExamConfig()">
+        <div class="exam-config-card">
+          <button class="modal-close" onclick="quizApp.closeExamConfig()" aria-label="Close">&times;</button>
+          <h2 class="exam-cfg-title"><i class="fas fa-graduation-cap"></i> Configure Your Exam</h2>
+          <p class="exam-cfg-sub" id="exam-cfg-scope">REGION > SYSTEM</p>
+
+          <div class="exam-cfg-row">
+            <label class="exam-cfg-label">Duration</label>
+            <div class="exam-cfg-chips" id="exam-cfg-duration">
+              <button class="exam-chip" data-value="15">15 min</button>
+              <button class="exam-chip active" data-value="30">30 min</button>
+              <button class="exam-chip" data-value="45">45 min</button>
+              <button class="exam-chip" data-value="60">60 min</button>
+              <button class="exam-chip" data-value="90">90 min</button>
+            </div>
+          </div>
+
+          <div class="exam-cfg-row">
+            <label class="exam-cfg-label">Questions</label>
+            <div class="exam-cfg-chips" id="exam-cfg-count">
+              <button class="exam-chip" data-value="20">20 Qs</button>
+              <button class="exam-chip" data-value="30">30 Qs</button>
+              <button class="exam-chip active" data-value="45">45 Qs</button>
+              <button class="exam-chip" data-value="60">60 Qs</button>
+              <button class="exam-chip" data-value="100">100 Qs</button>
+            </div>
+          </div>
+
+          <div class="exam-cfg-row">
+            <label class="exam-cfg-label">Question Format</label>
+            <div class="exam-cfg-chips" id="exam-cfg-format">
+              <button class="exam-chip active" data-value="mcq">MCQ only</button>
+              <button class="exam-chip" data-value="tf">True / False</button>
+              <button class="exam-chip" data-value="fib">Fill blanks</button>
+              <button class="exam-chip" data-value="mixed">All mixed</button>
+            </div>
+          </div>
+
+          <div class="exam-cfg-row">
+            <label class="exam-cfg-label">Reveal Answers</label>
+            <div class="exam-cfg-chips" id="exam-cfg-feedback">
+              <button class="exam-chip active" data-value="end">At the end (exam-like)</button>
+              <button class="exam-chip" data-value="instant">After each (practice-like)</button>
+            </div>
+          </div>
+
+          <div class="exam-cfg-summary" id="exam-cfg-summary">
+            <i class="fas fa-info-circle"></i> Available: <span id="exam-pool-count">?</span> questions in this pool
+          </div>
+
+          <div class="exam-cfg-actions">
+            <button class="srs-btn srs-btn-ghost" onclick="quizApp.closeExamConfig()">Cancel</button>
+            <button class="srs-btn srs-btn-primary" onclick="quizApp.startExamMode()">
+              <i class="fas fa-play-circle"></i> Start Exam
+            </button>
+          </div>
         </div>
       </div>
 
@@ -723,7 +931,7 @@
 
   <!-- Quiz & Why Sections -->
   <script src="data-quiz.JS"></script>
-  <script src="data-why.JS"></script>
+  <script src="data-why.js"></script>
 
   <!-- Study Tools (load BEFORE app.js so they're available) -->
   <script src="glossary.js"></script>
